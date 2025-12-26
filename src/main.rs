@@ -4,21 +4,44 @@ use hidapi::{ HidApi, DeviceInfo };
 use std::sync::{ mpsc, Arc, Mutex };
 use std::thread;
 use std::time::Duration;
+use std::fs;
+use std::path::PathBuf;
 use tao::event_loop::{ ControlFlow, EventLoop };
 use tray_icon::menu::{ Menu, MenuEvent, MenuItem, CheckMenuItem };
 use tray_icon::{ Icon, TrayIconBuilder, TrayIconEvent };
-use winrt_notification::Toast;
+use winrt_notification::{ Duration as WinrtDuration, Toast };
+use directories::ProjectDirs;
 
 const YUBICO_VENDOR_ID: u16 = 0x1050;
+
+fn get_config_path() -> Option<PathBuf> {
+    ProjectDirs::from("", "", "yubi-tray-rs").map(|dirs| dirs.config_dir().join("config.txt"))
+}
+
+fn load_notifications_enabled() -> bool {
+    get_config_path()
+        .and_then(|path| fs::read_to_string(path).ok())
+        .map(|content| content.trim() == "1")
+        .unwrap_or(false)
+}
+
+fn save_notifications_enabled(enabled: bool) {
+    if let Some(path) = get_config_path() {
+        if let Some(parent) = path.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        let _ = fs::write(path, if enabled { "1" } else { "0" });
+    }
+}
 
 fn main() {
     let event_loop = EventLoop::new();
 
-    // setup tray menu with "exit" item
-    let notifications_enabled = Arc::new(Mutex::new(false));
+    let initial_notif_state = load_notifications_enabled();
+    let notifications_enabled = Arc::new(Mutex::new(initial_notif_state));
 
     let tray_menu = Menu::new();
-    let notif_toggle = CheckMenuItem::new("Notifications", true, false, None);
+    let notif_toggle = CheckMenuItem::new("Notifications", true, initial_notif_state, None);
     let quit_item = MenuItem::new("Exit", true, None);
     let _ = tray_menu.append(&notif_toggle);
     let _ = tray_menu.append(&quit_item);
@@ -66,10 +89,10 @@ fn main() {
                 let mut enabled = notifications_enabled.lock().unwrap();
                 *enabled = !*enabled;
                 let _ = notif_toggle.set_checked(*enabled);
+                save_notifications_enabled(*enabled);
             }
         }
 
-        // [2]
         // [2] check for yubikey status updates
         if let Ok(maybe_info) = rx.try_recv() {
             let currently_connected = maybe_info.is_some();
@@ -169,21 +192,11 @@ fn generate_icon(r: u8, g: u8, b: u8) -> Icon {
 }
 
 fn show_notification(conn: bool) {
-    let (t1, text) = if conn {
-        ("yubi-tray-rs", "YubiKey has been connected")
-    } else {
-        ("yubi-tray-rs", "YubiKey has been disconnected")
-    };
+    let text = if conn { "YubiKey has been connected" } else { "YubiKey has been disconnected" };
 
-    if let Ok(toast) = Toast::new(Toast::POWERSHELL_APP_ID)
-        .title(t1)
+    let _ = Toast::new(Toast::POWERSHELL_APP_ID)
+        .title("yubi-tray-rs")
         .text1(text)
-        .duration(winrt_notification::Duration::Short)
-        .show()
-    {
-        thread::spawn(move || {
-            thread::sleep(Duration::from_secs(2));
-            let _ = toast.hide();
-        });
-    }
+        .duration(WinrtDuration::Short)
+        .show();
 }
