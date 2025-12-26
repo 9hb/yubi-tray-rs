@@ -1,12 +1,12 @@
 #![windows_subsystem = "windows"]
 
 use hidapi::{ HidApi, DeviceInfo };
-use std::sync::mpsc;
+use std::sync::{ mpsc, Arc, Mutex };
 use std::thread;
 use std::time::Duration;
 use tao::event_loop::{ ControlFlow, EventLoop };
-use tray_icon::menu::{ Menu, MenuEvent, MenuItem };
-use tray_icon::{ Icon, TrayIconBuilder };
+use tray_icon::menu::{ Menu, MenuEvent, MenuItem, CheckMenuItem };
+use tray_icon::{ Icon, TrayIconBuilder, TrayIconEvent };
 use winrt_notification::Toast;
 
 const YUBICO_VENDOR_ID: u16 = 0x1050;
@@ -15,12 +15,17 @@ fn main() {
     let event_loop = EventLoop::new();
 
     // setup tray menu with "exit" item
+    let notifications_enabled = Arc::new(Mutex::new(false));
+
     let tray_menu = Menu::new();
+    let notif_toggle = CheckMenuItem::new("Notifications", true, false, None);
     let quit_item = MenuItem::new("Exit", true, None);
+    let _ = tray_menu.append(&notif_toggle);
     let _ = tray_menu.append(&quit_item);
 
     let (tx, rx) = mpsc::channel::<Option<String>>();
     let menu_channel = MenuEvent::receiver();
+    let tray_channel = TrayIconEvent::receiver();
 
     // detection thread that checks for yubikey presence every second
     thread::spawn(move || {
@@ -49,20 +54,32 @@ fn main() {
         );
 
         // [1] check for menu events
+        if let Ok(_tray_event) = tray_channel.try_recv() {
+        }
+
         if let Ok(event) = menu_channel.try_recv() {
             if event.id == quit_item.id() {
                 *control_flow = ControlFlow::Exit;
                 return;
             }
+            if event.id == notif_toggle.id() {
+                let mut enabled = notifications_enabled.lock().unwrap();
+                *enabled = !*enabled;
+                let _ = notif_toggle.set_checked(*enabled);
+            }
         }
 
+        // [2]
         // [2] check for yubikey status updates
         if let Ok(maybe_info) = rx.try_recv() {
             let currently_connected = maybe_info.is_some();
 
             if let Some(was_connected) = previous_state {
                 if currently_connected != was_connected {
-                    show_notification(currently_connected);
+                    let enabled = *notifications_enabled.lock().unwrap();
+                    if enabled {
+                        show_notification(currently_connected);
+                    }
                 }
             }
 
@@ -158,13 +175,15 @@ fn show_notification(conn: bool) {
         ("yubi-tray-rs", "YubiKey has been disconnected")
     };
 
-    let _ = Toast::new(Toast::POWERSHELL_APP_ID)
+    if let Ok(toast) = Toast::new(Toast::POWERSHELL_APP_ID)
         .title(t1)
         .text1(text)
         .duration(winrt_notification::Duration::Short)
-        .show();
-
-    thread::spawn(|| {
-        thread::sleep(Duration::from_secs(3));
-    });
+        .show()
+    {
+        thread::spawn(move || {
+            thread::sleep(Duration::from_secs(2));
+            let _ = toast.hide();
+        });
+    }
 }
