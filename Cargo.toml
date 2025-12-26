@@ -9,3 +9,5 @@ tao = "0.34.5"
 image = "0.25.5"
 hidapi = "2.6.3"
 winrt-notification = "0.5.1"
+directories = "6.0.0"
+serde = { version = "1.0.228", features = ["derive"] }
