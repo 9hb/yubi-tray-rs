@@ -7,6 +7,7 @@ use std::time::Duration;
 use tao::event_loop::{ ControlFlow, EventLoop };
 use tray_icon::menu::{ Menu, MenuEvent, MenuItem };
 use tray_icon::{ Icon, TrayIconBuilder };
+use winrt_notification::Toast;
 
 const YUBICO_VENDOR_ID: u16 = 0x1050;
 
@@ -39,6 +40,8 @@ fn main() {
         .build()
         .unwrap();
 
+    let mut previous_state: Option<bool> = None;
+
     // main event loop
     event_loop.run(move |_event, _, control_flow| {
         *control_flow = ControlFlow::WaitUntil(
@@ -55,6 +58,16 @@ fn main() {
 
         // [2] check for yubikey status updates
         if let Ok(maybe_info) = rx.try_recv() {
+            let currently_connected = maybe_info.is_some();
+
+            if let Some(was_connected) = previous_state {
+                if currently_connected != was_connected {
+                    show_notification(currently_connected);
+                }
+            }
+
+            previous_state = Some(currently_connected);
+
             match maybe_info {
                 Some(info_text) => {
                     // CONNECTED (green)
@@ -63,7 +76,7 @@ fn main() {
                 }
                 None => {
                     // DISCONNECTED (red)
-                    let _ = tray_icon.set_tooltip(Some("yubikey: ODPOJEN".to_string()));
+                    let _ = tray_icon.set_tooltip(Some("Connect a YubiKey".to_string()));
                     let _ = tray_icon.set_icon(Some(generate_icon(255, 0, 0)));
                 }
             }
@@ -136,4 +149,22 @@ fn generate_icon(r: u8, g: u8, b: u8) -> Icon {
         }
     }
     Icon::from_rgba(rgba, width, height).expect("failed to create icon")
+}
+
+fn show_notification(conn: bool) {
+    let (t1, text) = if conn {
+        ("yubi-tray-rs", "YubiKey has been connected")
+    } else {
+        ("yubi-tray-rs", "YubiKey has been disconnected")
+    };
+
+    let _ = Toast::new(Toast::POWERSHELL_APP_ID)
+        .title(t1)
+        .text1(text)
+        .duration(winrt_notification::Duration::Short)
+        .show();
+
+    thread::spawn(|| {
+        thread::sleep(Duration::from_secs(3));
+    });
 }
