@@ -18,7 +18,7 @@ A lightweight Linux system tray application that monitors YubiKey connection sta
 │  yubi-tray-rs   │
 └────────┬────────┘
          ├───> Tray Icon: Green (Connected) / Red (Disconnected)
-         ├───> Tooltip: Product name, Serial Number, VID:PID
+         ├───> Context Menu: Model name & VID:PID (e.g. /dev/hidraw0)
          └───> Desktop Notifications (libnotify / notify-rust)
 ```
 
@@ -27,7 +27,7 @@ A lightweight Linux system tray application that monitors YubiKey connection sta
 ## Features
 
 - Real-time status indicator with green (connected) and red (disconnected) states
-- Device details in tooltip with model name, serial number, and USB vendor/product IDs
+- Quick device inspection in context menu showing model name and USB VID:PID path
 - Desktop notifications via libnotify / D-Bus on connect and disconnect events
 - Persistent configuration toggle for notification preferences
 - Native Wayland and X11 system tray integration via AppIndicator / GTK
