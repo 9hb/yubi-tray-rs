@@ -29,15 +29,15 @@ jobs:
       - name: determine next semantic version
         id: bump
         run: |
-          LATEST_TAG=$(git describe --tags --match "linux-v*" --abbrev=0 2>/dev/null || echo "linux-v0.1.0")
+          LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v1.1.0")
           echo "Latest tag: $LATEST_TAG"
           
-          VER_NUM=${LATEST_TAG#linux-v}
+          VER_NUM=${LATEST_TAG#v}
           IFS='.' read -r MAJOR MINOR PATCH <<< "$VER_NUM"
           
           PATCH=$((PATCH + 1))
           NEW_VER="${MAJOR}.${MINOR}.${PATCH}"
-          NEW_TAG="linux-v${NEW_VER}"
+          NEW_TAG="v${NEW_VER}"
           
           echo "Next version: $NEW_VER"
           echo "Next tag: $NEW_TAG"
@@ -56,24 +56,32 @@ jobs:
           echo "new_version=$NEW_VER" >> "$GITHUB_OUTPUT"
           echo "should_release=true" >> "$GITHUB_OUTPUT"
 
-  build-and-release:
-    name: build binary (${{ matrix.target }})
+  build-linux-macos:
+    name: build (${{ matrix.target }})
     needs: version-and-tag
     if: needs.version-and-tag.outputs.should_release == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         include:
           - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
             binary_name: yubi-tray-rs-x86_64-linux
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            binary_name: yubi-tray-rs-x86_64-macos
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            binary_name: yubi-tray-rs-aarch64-macos
     steps:
       - name: checkout code
         uses: actions/checkout@v4
         with:
           ref: ${{ needs.version-and-tag.outputs.new_tag }}
 
-      - name: install system dependencies
+      - name: install system dependencies (ubuntu)
+        if: matrix.os == 'ubuntu-latest'
         run: |
           sudo apt-get update
           sudo apt-get install -y libgtk-3-dev libappindicator3-dev libxdo-dev libudev-dev pkg-config
@@ -87,7 +95,7 @@ jobs:
         run: |
           cargo build --release --target ${{ matrix.target }}
 
-      - name: prepare direct standalone binary
+      - name: prepare binary artifact
         run: |
           mkdir -p dist
           cp target/${{ matrix.target }}/release/yubikey-watch dist/${{ matrix.binary_name }}
@@ -99,11 +107,44 @@ jobs:
           name: ${{ matrix.target }}
           path: dist/${{ matrix.binary_name }}
 
+  build-windows:
+    name: build (x86_64-pc-windows-msvc)
+    needs: version-and-tag
+    if: needs.version-and-tag.outputs.should_release == 'true'
+    runs-on: windows-latest
+    steps:
+      - name: checkout windows branch
+        uses: actions/checkout@v4
+        with:
+          ref: windows
+
+      - name: setup rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: build release binary
+        run: |
+          cargo build --release --target x86_64-pc-windows-msvc
+
+      - name: prepare binary artifact
+        run: |
+          mkdir dist
+          cp target/x86_64-pc-windows-msvc/release/yubi-tray-rs.exe dist/yubi-tray-rs-windows.exe
+        shell: pwsh
+
+      - name: upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: x86_64-pc-windows-msvc
+          path: dist/yubi-tray-rs-windows.exe
+
   publish-release:
-    name: publish github release
+    name: publish unified release
     needs:
       - version-and-tag
-      - build-and-release
+      - build-linux-macos
+      - build-windows
     runs-on: ubuntu-latest
     steps:
       - name: checkout
@@ -126,7 +167,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.version-and-tag.outputs.new_tag }}
-          name: Linux - v${{ needs.version-and-tag.outputs.new_version }}
+          name: ${{ needs.version-and-tag.outputs.new_tag }}
           draft: false
           prerelease: false
           files: release_files/*
