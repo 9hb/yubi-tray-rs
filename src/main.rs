@@ -47,7 +47,7 @@ fn save_notifications_enabled(enabled: bool) {
 }
 
 fn main() {
-    // Suppress upstream C-library warning from libayatana-appindicator
+    #[cfg(target_os = "linux")]
     unsafe {
         unsafe extern "C" fn dummy_log_handler(
             _log_domain: *const std::os::raw::c_char,

@@ -74,10 +74,10 @@ jobs:
             os: ubuntu-latest
             binary_name: yubi-tray-rs-x86_64-linux
           - target: x86_64-apple-darwin
-            os: macos-latest
+            os: macos-13
             binary_name: yubi-tray-rs-x86_64-macos
           - target: aarch64-apple-darwin
-            os: macos-latest
+            os: macos-14
             binary_name: yubi-tray-rs-aarch64-macos
     steps:
       - name: checkout code
