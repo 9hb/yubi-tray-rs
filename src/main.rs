@@ -1,15 +1,13 @@
-#![windows_subsystem = "windows"]
-
-use hidapi::{ HidApi, DeviceInfo };
-use std::sync::{ mpsc, Arc, Mutex };
+use hidapi::{HidApi, DeviceInfo};
+use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 use std::fs;
 use std::path::PathBuf;
-use tao::event_loop::{ ControlFlow, EventLoop };
-use tray_icon::menu::{ Menu, MenuEvent, MenuItem, CheckMenuItem };
-use tray_icon::{ Icon, TrayIconBuilder, TrayIconEvent };
-use winrt_notification::{ Duration as WinrtDuration, Toast };
+use tao::event_loop::{ControlFlow, EventLoop};
+use tray_icon::menu::{Menu, MenuEvent, MenuItem, CheckMenuItem};
+use tray_icon::{Icon, TrayIconBuilder, TrayIconEvent};
+use notify_rust::Notification;
 use directories::ProjectDirs;
 
 const YUBICO_VENDOR_ID: u16 = 0x1050;
@@ -145,7 +143,6 @@ fn format_device_info(device: &DeviceInfo) -> String {
 
     match device.serial_number() {
         Some(s) if !s.is_empty() => {
-            // s/n exists -> show it
             format!(
                 "{}\n\
                  S/N: {}\n\
@@ -157,7 +154,6 @@ fn format_device_info(device: &DeviceInfo) -> String {
             )
         }
         _ => {
-            // s/n does not exist or is empty -> ignore it
             format!("{}\n\
                  ID: {:04x}:{:04x}", product, vid, pid)
         }
@@ -194,9 +190,9 @@ fn generate_icon(r: u8, g: u8, b: u8) -> Icon {
 fn show_notification(conn: bool) {
     let text = if conn { "YubiKey has been connected" } else { "YubiKey has been disconnected" };
 
-    let _ = Toast::new(Toast::POWERSHELL_APP_ID)
-        .title("yubi-tray-rs")
-        .text1(text)
-        .duration(WinrtDuration::Short)
+    let _ = Notification::new()
+        .summary("yubi-tray-rs")
+        .body(text)
+        .icon("security-high")
         .show();
 }
