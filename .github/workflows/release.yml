@@ -60,26 +60,20 @@ jobs:
     name: build binary (${{ matrix.target }})
     needs: version-and-tag
     if: needs.version-and-tag.outputs.should_release == 'true'
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         include:
           - target: x86_64-unknown-linux-gnu
-            os: ubuntu-latest
-            use_cross: false
             binary_name: yubi-tray-rs-x86_64-linux
-          - target: aarch64-unknown-linux-gnu
-            os: ubuntu-latest
-            use_cross: true
-            binary_name: yubi-tray-rs-aarch64-linux
     steps:
       - name: checkout code
         uses: actions/checkout@v4
         with:
           ref: ${{ needs.version-and-tag.outputs.new_tag }}
 
-      - name: install system dependencies (ubuntu)
+      - name: install system dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y libgtk-3-dev libappindicator3-dev libxdo-dev libudev-dev pkg-config
@@ -89,18 +83,9 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
-      - name: install cross if required
-        if: matrix.use_cross
-        run: |
-          cargo install cross --git https://github.com/cross-rs/cross
-
       - name: build release binary
         run: |
-          if [ "${{ matrix.use_cross }}" = "true" ]; then
-            cross build --release --target ${{ matrix.target }}
-          else
-            cargo build --release --target ${{ matrix.target }}
-          fi
+          cargo build --release --target ${{ matrix.target }}
 
       - name: prepare direct standalone binary
         run: |
