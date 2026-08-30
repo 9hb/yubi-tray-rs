@@ -74,10 +74,10 @@ jobs:
             os: ubuntu-latest
             binary_name: yubi-tray-rs-x86_64-linux
           - target: x86_64-apple-darwin
-            os: macos-13
+            os: macos-latest
             binary_name: yubi-tray-rs-x86_64-macos
           - target: aarch64-apple-darwin
-            os: macos-14
+            os: macos-latest
             binary_name: yubi-tray-rs-aarch64-macos
     steps:
       - name: checkout code
@@ -135,7 +135,7 @@ jobs:
       - name: prepare binary artifact
         run: |
           mkdir dist
-          cp target/x86_64-pc-windows-msvc/release/yubi-tray-rs.exe dist/yubi-tray-rs-windows.exe
+          cp target/x86_64-pc-windows-msvc/release/yubikey-watch.exe dist/yubi-tray-rs-windows.exe
         shell: pwsh
 
       - name: upload artifact
