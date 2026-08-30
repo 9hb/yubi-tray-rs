@@ -29,8 +29,12 @@ jobs:
       - name: determine next semantic version
         id: bump
         run: |
-          LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v1.1.0")
-          echo "Latest tag: $LATEST_TAG"
+          # Fetch only valid semver tags matching v[0-9]*.[0-9]*.[0-9]*
+          LATEST_TAG=$(git tag -l "v[0-9]*.[0-9]*.[0-9]*" --sort=-v:refname | head -n1)
+          if [ -z "$LATEST_TAG" ]; then
+            LATEST_TAG="v1.1.0"
+          fi
+          echo "Latest valid tag: $LATEST_TAG"
           
           VER_NUM=${LATEST_TAG#v}
           IFS='.' read -r MAJOR MINOR PATCH <<< "$VER_NUM"
@@ -42,7 +46,8 @@ jobs:
           echo "Next version: $NEW_VER"
           echo "Next tag: $NEW_TAG"
           
-          sed -i "s/^version = \".*\"/version = \"$NEW_VER\"/" Cargo.toml
+          # Strictly replace only valid SemVer in Cargo.toml
+          sed -i -E 's/^version = "[^"]*"/version = "'"$NEW_VER"'"/' Cargo.toml
           
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
