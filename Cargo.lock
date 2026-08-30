@@ -3424,6 +3424,7 @@ name = "yubikey-watch"
 version = "0.1.0"
 dependencies = [
  "directories",
+ "glib-sys",
  "hidapi",
  "image",
  "notify-rust",

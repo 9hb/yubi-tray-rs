@@ -2,6 +2,12 @@
 
 A lightweight Linux system tray application that monitors YubiKey connection status in real-time.
 
+<div align="center">
+  <img src="assets/menu.png" alt="Context Menu" width="220" />
+  &nbsp;&nbsp;&nbsp;&nbsp;
+  <img src="assets/notification.png" alt="Desktop Notification" width="460" />
+</div>
+
 ```text
 ┌─────────────────┐
 │  YubiKey (HID)  │
