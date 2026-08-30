@@ -7,8 +7,10 @@ use std::path::PathBuf;
 use tao::event_loop::{ControlFlow, EventLoopBuilder};
 use tray_icon::menu::{Menu, MenuEvent, MenuItem, CheckMenuItem, PredefinedMenuItem};
 use tray_icon::{Icon, TrayIconBuilder, TrayIconEvent};
-use notify_rust::Notification;
 use directories::ProjectDirs;
+
+#[cfg(target_os = "linux")]
+use notify_rust::Notification;
 
 #[derive(Debug, Clone)]
 struct YubiKeyDetails {
@@ -259,9 +261,25 @@ fn generate_icon(r: u8, g: u8, b: u8) -> Icon {
 fn show_notification(conn: bool) {
     let text = if conn { "YubiKey has been connected" } else { "YubiKey has been disconnected" };
 
-    let _ = Notification::new()
-        .summary("yubi-tray-rs")
-        .body(text)
-        .icon("security-high")
-        .show();
+    #[cfg(target_os = "linux")]
+    {
+        let _ = Notification::new()
+            .summary("yubi-tray-rs")
+            .body(text)
+            .icon("security-high")
+            .show();
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        // Native macOS User Notification via AppleScript
+        let script = format!(
+            "display notification \"{}\" with title \"yubi-tray-rs\"",
+            text
+        );
+        let _ = std::process::Command::new("osascript")
+            .arg("-e")
+            .arg(script)
+            .spawn();
+    }
 }
