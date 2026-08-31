@@ -1,6 +1,6 @@
 # yubi-tray-rs
 
-A lightweight Linux system tray application that monitors YubiKey connection status in real-time.
+A lightweight, cross-platform system tray application that monitors YubiKey connection status in real-time on Linux, macOS, and Windows.
 
 <div align="center">
   <img src="assets/menu.png" alt="Context Menu" width="220" />
@@ -18,50 +18,71 @@ A lightweight Linux system tray application that monitors YubiKey connection sta
 │  yubi-tray-rs   │
 └────────┬────────┘
          ├───> Tray Icon: Green (Connected) / Red (Disconnected)
-         ├───> Context Menu: Model name & VID:PID (e.g. /dev/hidraw0)
-         └───> Desktop Notifications (libnotify / notify-rust)
+         ├───> Context Menu: Device name & USB HID IDs
+         └───> Desktop Notifications: D-Bus (Linux), AppleScript (macOS), WinRT Toast (Windows)
 ```
 
 ---
 
 ## Features
 
-- Real-time status indicator with green (connected) and red (disconnected) states
-- Quick device inspection in context menu showing model name and USB VID:PID path
-- Desktop notifications via libnotify / D-Bus on connect and disconnect events
+- Real-time status indicator with vibrant green (connected) and red (disconnected) states
+- Quick device inspection in context menu with model name and hardware identifiers
+- Native desktop notifications on connect and disconnect events across all platforms
 - Persistent configuration toggle for notification preferences
-- Native Wayland and X11 system tray integration via AppIndicator / GTK
+- Multi-platform support: Wayland/X11 (Linux), NSStatusBar (macOS), and System Tray (Windows)
 
 ---
 
-## Requirements
+## Installation & Download
 
-- Linux (GNOME, KDE Plasma, XFCE, Sway, or any desktop environment supporting AppIndicator)
-- System packages: `gtk3-devel`, `libappindicator-gtk3`, `libxdo-devel`, `systemd-devel`
+Pre-compiled standalone binaries for all platforms and architectures are available on the [Releases](https://github.com/9hb/yubi-tray-rs/releases) page:
+
+- **Linux**: `yubi-tray-rs-linux-x86_64`, `yubi-tray-rs-linux-arm64`
+- **macOS**: `yubi-tray-rs-macos-x86_64`, `yubi-tray-rs-macos-arm64`
+- **Windows**: `yubi-tray-rs-windows.exe`
 
 ---
 
-## Building & Installation
+## Building from Source
+
+### Prerequisites
+
+- Rust toolchain (`cargo`, `rustc` 1.80+)
+- **Linux only**: `gtk3-devel`, `libappindicator-gtk3`, `libxdo-devel`, `systemd-devel`
+
+### Build
 
 ```bash
-git clone -b linux https://github.com/9hb/yubi-tray-rs.git
+git clone https://github.com/9hb/yubi-tray-rs.git
 cd yubi-tray-rs
 cargo build --release
-install -Dm755 target/release/yubikey-watch ~/.local/bin/yubi-tray-rs
 ```
+
+The compiled binary will be located in `target/release/`.
 
 ---
 
 ## Usage
 
-Start the background tray indicator:
+### Linux & macOS
 
 ```bash
 yubi-tray-rs &
 ```
 
+### Windows
+
+Run `yubi-tray-rs-windows.exe` (starts directly in the system tray without a console window).
+
+### Controls
+
 Right-click the tray icon to:
 - Toggle desktop notifications
+- Inspect device identifiers
 - Exit the application
 
-Configuration is saved in `~/.config/yubi-tray-rs/config.txt`.
+### Configuration Path
+
+- **Linux / macOS**: `~/.config/yubi-tray-rs/config.txt`
+- **Windows**: `%APPDATA%\yubi-tray-rs\config.txt`
