@@ -5,11 +5,13 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::process::Command;
 use tao::event_loop::{ControlFlow, EventLoopBuilder};
 use tray_icon::menu::{Menu, MenuEvent, MenuItem, CheckMenuItem, PredefinedMenuItem};
 use tray_icon::{Icon, TrayIconBuilder, TrayIconEvent};
 use directories::ProjectDirs;
+use serde::{Deserialize, Serialize};
 
 #[cfg(target_os = "linux")]
 use notify_rust::Notification;
@@ -26,30 +28,108 @@ struct YubiKeyDetails {
     hid_path: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NotificationConfig {
+    #[serde(default = "default_true")]
+    pub enable: bool,
+    #[serde(default = "default_true")]
+    pub on_connect: bool,
+    #[serde(default = "default_true")]
+    pub on_disconnect: bool,
+    #[serde(default)]
+    pub sound: String,
+}
+
+impl Default for NotificationConfig {
+    fn default() -> Self {
+        Self {
+            enable: true,
+            on_connect: true,
+            on_disconnect: true,
+            sound: String::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CustomMessagesConfig {
+    #[serde(default = "default_connect_msg")]
+    pub on_connect: String,
+    #[serde(default = "default_disconnect_msg")]
+    pub on_disconnect: String,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+fn default_connect_msg() -> String {
+    "YubiKey has been connected".to_string()
+}
+
+fn default_disconnect_msg() -> String {
+    "YubiKey has been disconnected".to_string()
+}
+
+impl Default for CustomMessagesConfig {
+    fn default() -> Self {
+        Self {
+            on_connect: default_connect_msg(),
+            on_disconnect: default_disconnect_msg(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct AppConfig {
+    #[serde(default)]
+    pub notification: NotificationConfig,
+    #[serde(default, alias = "custom messages")]
+    pub custom_messages: CustomMessagesConfig,
+}
+
 #[derive(Debug)]
 enum UserEvent {
     YubiKeyUpdate(Option<YubiKeyDetails>),
+    ConfigUpdate(AppConfig),
 }
 
 const YUBICO_VENDOR_ID: u16 = 0x1050;
 
 fn get_config_path() -> Option<PathBuf> {
-    ProjectDirs::from("", "", "yubi-tray-rs").map(|dirs| dirs.config_dir().join("config.txt"))
+    ProjectDirs::from("", "", "yubi-tray-rs").map(|dirs| dirs.config_dir().join("config.toml"))
 }
 
-fn load_notifications_enabled() -> bool {
-    get_config_path()
-        .and_then(|path| fs::read_to_string(path).ok())
-        .map(|content| content.trim() == "1")
-        .unwrap_or(true)
+fn load_config() -> AppConfig {
+    if let Some(path) = get_config_path() {
+        if let Ok(content) = fs::read_to_string(&path) {
+            if let Ok(cfg) = toml::from_str::<AppConfig>(&content) {
+                return cfg;
+            }
+        }
+    }
+    let default_cfg = AppConfig::default();
+    save_config(&default_cfg);
+    default_cfg
 }
 
-fn save_notifications_enabled(enabled: bool) {
+fn save_config(cfg: &AppConfig) {
     if let Some(path) = get_config_path() {
         if let Some(parent) = path.parent() {
             let _ = fs::create_dir_all(parent);
         }
-        let _ = fs::write(path, if enabled { "1" } else { "0" });
+
+        let content = format!(
+            "[notification]\nenable = {}\non_connect = {}\non_disconnect = {}\nsound = \"{}\" # leave empty for no sound\n\n[custom_messages]\non_connect = \"{}\"\non_disconnect = \"{}\"\n",
+            cfg.notification.enable,
+            cfg.notification.on_connect,
+            cfg.notification.on_disconnect,
+            cfg.notification.sound,
+            cfg.custom_messages.on_connect,
+            cfg.custom_messages.on_disconnect
+        );
+
+        let _ = fs::write(path, content);
     }
 }
 
@@ -76,8 +156,8 @@ fn main() {
     let event_loop = EventLoopBuilder::<UserEvent>::with_user_event().build();
     let proxy = event_loop.create_proxy();
 
-    let initial_notif_state = load_notifications_enabled();
-    let notifications_enabled = Arc::new(Mutex::new(initial_notif_state));
+    let initial_config = load_config();
+    let config = Arc::new(Mutex::new(initial_config.clone()));
 
     let initial_device = get_yubikey_details();
     let is_connected = initial_device.is_some();
@@ -85,7 +165,7 @@ fn main() {
     let (dev_name, dev_hid) = format_menu_strings(&initial_device);
 
     let tray_menu = Menu::new();
-    let notif_toggle = CheckMenuItem::new("Notifications", true, initial_notif_state, None);
+    let notif_toggle = CheckMenuItem::new("Notifications", true, initial_config.notification.enable, None);
     let sep1 = PredefinedMenuItem::separator();
 
     // Unselectable / read-only display items
@@ -124,11 +204,33 @@ fn main() {
         .build()
         .expect("Failed to build tray icon");
 
+    // Detection thread for device presence (1s poll)
+    let proxy_presence = proxy.clone();
     thread::spawn(move || {
         loop {
             thread::sleep(Duration::from_millis(1000));
             let dev = get_yubikey_details();
-            let _ = proxy.send_event(UserEvent::YubiKeyUpdate(dev));
+            let _ = proxy_presence.send_event(UserEvent::YubiKeyUpdate(dev));
+        }
+    });
+
+    // Config file watcher thread for real-time menu sync when edited manually
+    let proxy_config = proxy.clone();
+    thread::spawn(move || {
+        let mut last_modified = None;
+        loop {
+            thread::sleep(Duration::from_millis(500));
+            if let Some(path) = get_config_path() {
+                if let Ok(metadata) = fs::metadata(&path) {
+                    if let Ok(modified) = metadata.modified() {
+                        if last_modified != Some(modified) {
+                            last_modified = Some(modified);
+                            let cfg = load_config();
+                            let _ = proxy_config.send_event(UserEvent::ConfigUpdate(cfg));
+                        }
+                    }
+                }
+            }
         }
     });
 
@@ -147,22 +249,43 @@ fn main() {
                 return;
             }
             if event.id == notif_toggle.id() {
-                let mut enabled = notifications_enabled.lock().unwrap();
-                *enabled = !*enabled;
-                let _ = notif_toggle.set_checked(*enabled);
-                save_notifications_enabled(*enabled);
+                let mut current_cfg = load_config();
+                current_cfg.notification.enable = !current_cfg.notification.enable;
+                let _ = notif_toggle.set_checked(current_cfg.notification.enable);
+                save_config(&current_cfg);
+                let mut cfg_guard = config.lock().unwrap();
+                *cfg_guard = current_cfg;
             }
         }
 
         match event {
+            tao::event::Event::UserEvent(UserEvent::ConfigUpdate(new_cfg)) => {
+                let mut cfg_guard = config.lock().unwrap();
+                *cfg_guard = new_cfg.clone();
+                let _ = notif_toggle.set_checked(new_cfg.notification.enable);
+            }
             tao::event::Event::UserEvent(UserEvent::YubiKeyUpdate(maybe_dev)) => {
                 let currently_connected = maybe_dev.is_some();
 
                 if let Some(was_connected) = previous_state {
                     if currently_connected != was_connected {
-                        let enabled = *notifications_enabled.lock().unwrap();
-                        if enabled {
-                            show_notification(currently_connected);
+                        let current_cfg = load_config();
+                        {
+                            let mut cfg_guard = config.lock().unwrap();
+                            *cfg_guard = current_cfg.clone();
+                            let _ = notif_toggle.set_checked(current_cfg.notification.enable);
+                        }
+
+                        if current_cfg.notification.enable {
+                            let should_notify = if currently_connected {
+                                current_cfg.notification.on_connect
+                            } else {
+                                current_cfg.notification.on_disconnect
+                            };
+
+                            if should_notify {
+                                show_connection_notification(currently_connected, &current_cfg);
+                            }
                         }
                     }
                 }
@@ -262,14 +385,86 @@ fn generate_icon(r: u8, g: u8, b: u8) -> Icon {
     Icon::from_rgba(rgba, width, height).expect("failed to create icon")
 }
 
-fn show_notification(conn: bool) {
-    let text = if conn { "YubiKey has been connected" } else { "YubiKey has been disconnected" };
+fn play_sound(sound_path: &str) {
+    let raw_path = sound_path.trim();
+    if raw_path.is_empty() {
+        return;
+    }
+
+    let expanded_path = if raw_path.starts_with("~/") {
+        if let Some(home) = std::env::var_os("HOME") {
+            PathBuf::from(home).join(&raw_path[2..])
+        } else {
+            PathBuf::from(raw_path)
+        }
+    } else {
+        PathBuf::from(raw_path)
+    };
+
+    if !expanded_path.exists() {
+        return;
+    }
+
+    let path_str = expanded_path.to_string_lossy().to_string();
+
+    #[cfg(target_os = "linux")]
+    {
+        thread::spawn(move || {
+            let _ = Command::new("pw-play")
+                .arg(&path_str)
+                .output()
+                .or_else(|_| Command::new("paplay").arg(&path_str).output())
+                .or_else(|_| Command::new("aplay").arg(&path_str).output())
+                .or_else(|_| Command::new("canberra-gtk-play").arg("-f").arg(&path_str).output())
+                .or_else(|_| Command::new("ffplay").arg("-nodisp").arg("-autoexit").arg(&path_str).output());
+        });
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        thread::spawn(move || {
+            let _ = Command::new("afplay").arg(&path_str).output();
+        });
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        thread::spawn(move || {
+            let script = format!("(New-Object Media.SoundPlayer '{}').PlaySync()", path_str.replace('\'', "''"));
+            let _ = Command::new("powershell")
+                .arg("-NoProfile")
+                .arg("-NonInteractive")
+                .arg("-Command")
+                .arg(script)
+                .output();
+        });
+    }
+}
+
+fn show_connection_notification(conn: bool, cfg: &AppConfig) {
+    let message = if conn {
+        if cfg.custom_messages.on_connect.trim().is_empty() {
+            "YubiKey has been connected"
+        } else {
+            cfg.custom_messages.on_connect.as_str()
+        }
+    } else {
+        if cfg.custom_messages.on_disconnect.trim().is_empty() {
+            "YubiKey has been disconnected"
+        } else {
+            cfg.custom_messages.on_disconnect.as_str()
+        }
+    };
+
+    if !cfg.notification.sound.trim().is_empty() {
+        play_sound(&cfg.notification.sound);
+    }
 
     #[cfg(target_os = "linux")]
     {
         let _ = Notification::new()
             .summary("yubi-tray-rs")
-            .body(text)
+            .body(message)
             .icon("security-high")
             .show();
     }
@@ -278,7 +473,7 @@ fn show_notification(conn: bool) {
     {
         let script = format!(
             "display notification \"{}\" with title \"yubi-tray-rs\"",
-            text
+            message
         );
         let _ = std::process::Command::new("osascript")
             .arg("-e")
@@ -290,7 +485,7 @@ fn show_notification(conn: bool) {
     {
         let _ = Toast::new(Toast::POWERSHELL_APP_ID)
             .title("yubi-tray-rs")
-            .text1(text)
+            .text1(message)
             .duration(WinrtDuration::Short)
             .show();
     }
