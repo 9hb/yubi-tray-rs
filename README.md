@@ -9,17 +9,17 @@ A lightweight, cross-platform system tray application that monitors YubiKey conn
 </div>
 
 ```text
-┌─────────────────┐
-│  YubiKey (HID)  │
-└────────┬────────┘
-         │ USB event detection (1s poll)
-         ▼
-┌─────────────────┐
-│  yubi-tray-rs   │
-└────────┬────────┘
-         ├───> Tray Icon: Green (Connected) / Red (Disconnected)
-         ├───> Context Menu: Device name & USB HID IDs
-         └───> Desktop Notifications: D-Bus (Linux), AppleScript (macOS), WinRT Toast (Windows)
+┌─────────────────┐        ┌─────────────────┐
+│  YubiKey (HID)  │        │   config.toml   │
+└────────┬────────┘        └────────┬────────┘
+         │ USB Poll (1s)            │ Two-way Hot-Reload
+         ▼                          ▼
+┌────────────────────────────────────────────┐
+│                yubi-tray-rs                │
+└──────────────────────┬─────────────────────┘
+                       ├───> Tray Icon: Green (Connected) / Red (Disconnected)
+                       ├───> Context Menu: Hardware details & Quick toggles
+                       └───> Native Notifications: Custom sound & messages
 ```
 
 ---
@@ -82,7 +82,22 @@ Right-click the tray icon to:
 - Inspect device identifiers
 - Exit the application
 
-### Configuration Path
+### Configuration
 
-- **Linux / macOS**: `~/.config/yubi-tray-rs/config.txt`
-- **Windows**: `%APPDATA%\yubi-tray-rs\config.txt`
+The configuration file is located at:
+- **Linux / macOS**: `~/.config/yubi-tray-rs/config.toml`
+- **Windows**: `%APPDATA%\yubi-tray-rs\config.toml`
+
+Example `config.toml`:
+
+```toml
+[notification]
+enable = true
+on_connect = true
+on_disconnect = true
+sound = "" # leave empty for no sound
+
+[custom_messages]
+on_connect = "YubiKey has been connected"
+on_disconnect = "YubiKey has been disconnected"
+```
