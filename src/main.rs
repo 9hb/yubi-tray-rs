@@ -1,3 +1,5 @@
+#![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
+
 use hidapi::HidApi;
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -11,6 +13,9 @@ use directories::ProjectDirs;
 
 #[cfg(target_os = "linux")]
 use notify_rust::Notification;
+
+#[cfg(target_os = "windows")]
+use winrt_notification::{Duration as WinrtDuration, Toast};
 
 #[derive(Debug, Clone)]
 struct YubiKeyDetails {
@@ -67,7 +72,7 @@ fn main() {
             let _ = glib_sys::g_log_set_handler(domain.as_ptr(), flags, Some(dummy_log_handler), std::ptr::null_mut());
         }
     }
-    
+
     let event_loop = EventLoopBuilder::<UserEvent>::with_user_event().build();
     let proxy = event_loop.create_proxy();
 
@@ -82,11 +87,11 @@ fn main() {
     let tray_menu = Menu::new();
     let notif_toggle = CheckMenuItem::new("Notifications", true, initial_notif_state, None);
     let sep1 = PredefinedMenuItem::separator();
-    
+
     // Unselectable / read-only display items
     let info_name = MenuItem::new(&dev_name, false, None);
     let info_hid = MenuItem::new(&dev_hid, false, None);
-    
+
     let sep2 = PredefinedMenuItem::separator();
     let quit_item = MenuItem::new("Exit", true, None);
 
@@ -147,7 +152,6 @@ fn main() {
                 let _ = notif_toggle.set_checked(*enabled);
                 save_notifications_enabled(*enabled);
             }
-            // info_name and info_hid are unselectable and do not trigger actions
         }
 
         match event {
@@ -164,7 +168,7 @@ fn main() {
                 }
 
                 previous_state = Some(currently_connected);
-                
+
                 let (name, hid) = format_menu_strings(&maybe_dev);
                 let _ = info_name.set_text(name);
                 let _ = info_hid.set_text(hid);
@@ -272,7 +276,6 @@ fn show_notification(conn: bool) {
 
     #[cfg(target_os = "macos")]
     {
-        // Native macOS User Notification via AppleScript
         let script = format!(
             "display notification \"{}\" with title \"yubi-tray-rs\"",
             text
@@ -281,5 +284,14 @@ fn show_notification(conn: bool) {
             .arg("-e")
             .arg(script)
             .spawn();
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        let _ = Toast::new(Toast::POWERSHELL_APP_ID)
+            .title("yubi-tray-rs")
+            .text1(text)
+            .duration(WinrtDuration::Short)
+            .show();
     }
 }

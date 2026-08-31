@@ -3,7 +3,7 @@ name: release
 on:
   push:
     branches:
-      - linux
+      - main
     paths-ignore:
       - '**.md'
       - '.gitignore'
@@ -53,7 +53,7 @@ jobs:
           git add Cargo.toml
           git commit -m "chore(release): bump version to $NEW_VER [skip ci]" || true
           git tag "$NEW_TAG"
-          git push origin linux --tags
+          git push origin main --tags
           
           echo "new_tag=$NEW_TAG" >> "$GITHUB_OUTPUT"
           echo "new_version=$NEW_VER" >> "$GITHUB_OUTPUT"
@@ -123,10 +123,10 @@ jobs:
     if: needs.version-and-tag.outputs.should_release == 'true'
     runs-on: windows-latest
     steps:
-      - name: checkout windows branch
+      - name: checkout code
         uses: actions/checkout@v4
         with:
-          ref: windows
+          ref: ${{ needs.version-and-tag.outputs.new_tag }}
 
       - name: setup rust toolchain
         uses: dtolnay/rust-toolchain@stable
